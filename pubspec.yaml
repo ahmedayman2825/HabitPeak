@@ -1,0 +1,41 @@
+name: open_habit
+description: Offline-first, local-only habit tracking app built with Flutter and SQLite.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  collection: ^1.19.1
+  csv: ^8.0.0
+  file_picker: ^11.0.2
+  fl_chart: ^1.2.0
+  flutter_local_notifications: ^21.0.0
+  flutter_riverpod: ^3.3.1
+  home_widget: ^0.9.1
+  intl: ^0.20.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  shared_preferences: ^2.5.5
+  sqflite: ^2.4.2+1
+  timezone: ^0.11.0
+  uuid: ^4.5.3
+  flutter_timezone: ^5.1.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/screenshots/
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "build/app/icon.png"
