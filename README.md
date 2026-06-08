@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs\icon.png" alt="HabitPeak Logo" width="100"/>
+<img src="docs/icon.png" alt="HabitPeak Logo" width="100"/>
 
 # HabitPeak
 
@@ -50,9 +50,9 @@ HabitPeak is a modern, privacy-respecting habit tracker designed for high perfor
 
 <div align="center">
 
-| Home (Light) | Home (Dark) | Analytics | Widget |
-|---|---|---|---|
-| ![Home Light](assets/screenshots/home-light.png) | ![Home Dark](assets/screenshots/home-dark.png) | ![Analytics](assets/screenshots/analytics.png) | ![Widget](assets/screenshots/android-widget.png) |
+| Home (Light) | Home (Dark) | Analytics | Settings | Create new Habbit |
+|---|---|---|---|---|
+| <img width="1080" height="2314" alt="Screenshot_2026-06-08-14-02-52-261_com openhabit app" src="https://github.com/user-attachments/assets/2a2e2784-8297-4cb1-b1fd-c4e12b1aa907" />| <img width="1080" height="2319" alt="Screenshot_2026-06-08-14-02-46-982_com openhabit app" src="https://github.com/user-attachments/assets/cd2e6c78-8d88-4ef9-9492-eb07f2b4879c" />| <img width="1080" height="2308" alt="Screenshot_2026-06-08-14-02-59-466_com openhabit app" src="https://github.com/user-attachments/assets/4fb14996-955f-41ad-ba61-b814a021f271" /> | <img width="1080" height="2319" alt="Screenshot_2026-06-08-14-03-04-715_com openhabit app" src="https://github.com/user-attachments/assets/54762aed-27e9-47fe-ab89-8bd92463c24f" />| <img width="1080" height="2303" alt="Screenshot_2026-06-08-14-01-50-203_com openhabit app" src="https://github.com/user-attachments/assets/126dae28-2f67-4ec9-9b5e-7dffebb10a83" /> |
 
 </div>
 
