@@ -4,7 +4,7 @@
 
 # HabitPeak
 
-**A premium, offline-first, local-only habit tracker built with Flutter and SQLite.**
+**A premium, offline-first, habit tracker built with Flutter and SQLite.**
 
 [![Flutter Version](https://img.shields.io/badge/Flutter-%3E%3D_3.10.0-0256AB?logo=flutter&style=for-the-badge)](https://flutter.dev)
 [![Platform Android](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&style=for-the-badge)](https://developer.android.com)
