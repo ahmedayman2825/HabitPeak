@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <p align="center">
   <img src="build/app/icon.png" alt="HabitPeak Logo" width="128" height="128" style="border-radius: 28%; box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.15);" />
 </p>
@@ -135,3 +136,6 @@ We welcome contributions of all types! To keep development fast, clean, and orga
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](file:///c:/Users/ahmed/OneDrive/Documents/New%20project%202/LICENSE) file for details.
+=======
+# HabitPeak
+>>>>>>> 23fe16c0d88c6681c8329235c39b5561e3e7f76a
