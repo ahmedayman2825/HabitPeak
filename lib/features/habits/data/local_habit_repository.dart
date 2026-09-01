@@ -20,34 +20,47 @@ class LocalHabitRepository implements HabitRepository {
   @override
   Future<List<Habit>> getAllHabits({bool includeArchived = false}) async {
     final db = await _database.instance;
-    final rows = await db.query(
-      'habits',
-      where: includeArchived ? null : 'archived_at IS NULL',
-      orderBy: 'sort_order ASC, created_at ASC',
-    );
-    final habits = <Habit>[];
-    for (final row in rows) {
-      final habit = await _hydrateHabit(db, row);
-      if (habit != null) {
-        habits.add(habit);
-      }
-    }
-    return habits;
+    // Single JOIN query replaces N+1 individual SELECTs for schedules+targets.
+    final rows = await db.rawQuery('''
+      SELECT h.*, s.recurrence_type, s.start_date, s.end_date,
+             s.selected_weekdays, s.excluded_weekdays, s.month_days, s.interval_days,
+             t.number_target, t.timer_target_seconds
+      FROM habits h
+      INNER JOIN habit_schedules s ON s.habit_id = h.id
+      LEFT JOIN habit_targets t ON t.habit_id = h.id
+      ${includeArchived ? '' : 'WHERE h.archived_at IS NULL'}
+      ORDER BY h.sort_order ASC, h.created_at ASC
+    ''');
+    return rows.map((row) {
+      return Habit.fromRows(
+        habit: row,
+        schedule: row,
+        target: row,
+      );
+    }).toList();
   }
 
   @override
   Future<Habit?> getHabit(String habitId) async {
     final db = await _database.instance;
-    final rows = await db.query(
-      'habits',
-      where: 'id = ?',
-      whereArgs: <Object?>[habitId],
-      limit: 1,
-    );
+    final rows = await db.rawQuery('''
+      SELECT h.*, s.recurrence_type, s.start_date, s.end_date,
+             s.selected_weekdays, s.excluded_weekdays, s.month_days, s.interval_days,
+             t.number_target, t.timer_target_seconds
+      FROM habits h
+      INNER JOIN habit_schedules s ON s.habit_id = h.id
+      LEFT JOIN habit_targets t ON t.habit_id = h.id
+      WHERE h.id = ?
+      LIMIT 1
+    ''', <Object?>[habitId]);
     if (rows.isEmpty) {
       return null;
     }
-    return _hydrateHabit(db, rows.first);
+    return Habit.fromRows(
+      habit: rows.first,
+      schedule: rows.first,
+      target: rows.first,
+    );
   }
 
   @override
@@ -58,14 +71,104 @@ class LocalHabitRepository implements HabitRepository {
     final day = HabitClock.habitDay(now, resetMinutes: settings.resetMinutes);
     final dayKey = HabitClock.dayKey(now, resetMinutes: settings.resetMinutes);
     final habits = await getAllHabits();
+    final scheduled = habits.where((habit) => habit.isScheduledOn(day)).toList();
+    if (scheduled.isEmpty) {
+      return const <HabitWithEntry>[];
+    }
+
+    final db = await _database.instance;
+    final habitIds = scheduled.map((h) => h.id).toList();
+
+    // Batch-fetch today's entries for all habits in one query.
+    final entryRows = await db.query(
+      'habit_entries',
+      where: 'day = ? AND habit_id IN (${_placeholders(habitIds.length)})',
+      whereArgs: <Object?>[dayKey, ...habitIds],
+    );
+    final entriesByHabitId = <String, HabitEntry>{};
+    for (final row in entryRows) {
+      final entry = HabitEntry.fromMap(row);
+      entriesByHabitId[entry.habitId] = entry;
+    }
+
+    // Batch-fetch active timer sessions for all habits in one query.
+    final timerRows = await db.query(
+      'timer_sessions',
+      where: 'is_active = 1 AND habit_id IN (${_placeholders(habitIds.length)})',
+      whereArgs: habitIds,
+    );
+    final sessionsByHabitId = <String, TimerSession>{};
+    for (final row in timerRows) {
+      final session = TimerSession.fromMap(row);
+      sessionsByHabitId[session.habitId] = session;
+    }
+
+    // Batch-fetch streak restoration data for all habits.
+    final yearMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final restoreCountRows = await db.rawQuery(
+      'SELECT habit_id, COUNT(*) as cnt FROM streak_restorations '
+      'WHERE habit_id IN (${_placeholders(habitIds.length)}) AND restored_at LIKE ? '
+      'GROUP BY habit_id',
+      <Object?>[...habitIds, '$yearMonth%'],
+    );
+    final restoreCountByHabit = <String, int>{};
+    for (final row in restoreCountRows) {
+      restoreCountByHabit[row['habit_id'] as String] = row['cnt'] as int;
+    }
+
+    // Batch-fetch completed entry days for streak calculation.
+    final streakRows = await db.rawQuery(
+      'SELECT habit_id, day FROM habit_entries '
+      'WHERE status = ? AND habit_id IN (${_placeholders(habitIds.length)})',
+      <Object?>[HabitEntryStatus.completed.name, ...habitIds],
+    );
+    final completedDaysByHabit = <String, Set<String>>{};
+    for (final row in streakRows) {
+      final hid = row['habit_id'] as String;
+      (completedDaysByHabit[hid] ??= <String>{}).add(row['day'] as String);
+    }
+
+    // Find the last scheduled day before today for restore-check.
+    DateTime? findLastScheduledDay(Habit habit) {
+      DateTime cursor = day.subtract(const Duration(days: 1));
+      for (int i = 0; i < 30; i++) {
+        if (habit.isScheduledOn(cursor)) {
+          return cursor;
+        }
+        cursor = cursor.subtract(const Duration(days: 1));
+      }
+      return null;
+    }
+
+    // Batch-fetch restored days for all habits to check restore eligibility.
+    final restoredDayRows = await db.query(
+      'streak_restorations',
+      where: 'habit_id IN (${_placeholders(habitIds.length)})',
+      whereArgs: habitIds,
+    );
+    final restoredDaysByHabit = <String, Set<String>>{};
+    for (final row in restoredDayRows) {
+      final hid = row['habit_id'] as String;
+      (restoredDaysByHabit[hid] ??= <String>{}).add(row['restored_day'] as String);
+    }
+
     final visible = <HabitWithEntry>[];
-    for (final habit in habits.where((habit) => habit.isScheduledOn(day))) {
-      final entry = await getEntry(habit.id, dayKey);
-      final streak = await calculateStreak(habit, day);
-      final activeSession = await getActiveTimerSession(habit.id);
+    for (final habit in scheduled) {
+      final entry = entriesByHabitId[habit.id];
+      final completedDays = completedDaysByHabit[habit.id] ?? const <String>{};
+      final streak = _calculateStreakFromDays(habit, day, completedDays);
+      final activeSession = sessionsByHabitId[habit.id];
       final savedSeconds = entry?.timerSeconds ?? 0;
       final activeSeconds = activeSession?.elapsedSecondsAt(now) ?? 0;
-      final canRestore = await canRestoreStreak(habit.id, now, settings);
+      final canRestore = _canRestoreStreakBatched(
+        habit: habit,
+        now: now,
+        settings: settings,
+        completedDays: completedDays,
+        restoredDays: restoredDaysByHabit[habit.id] ?? const <String>{},
+        monthlyCount: restoreCountByHabit[habit.id] ?? 0,
+        findLastScheduledDay: findLastScheduledDay,
+      );
       visible.add(
         HabitWithEntry(
           habit: habit,
@@ -80,6 +183,66 @@ class LocalHabitRepository implements HabitRepository {
       );
     }
     return visible;
+  }
+
+  /// Pure in-memory streak calculation using pre-fetched completed days.
+  int _calculateStreakFromDays(
+    Habit habit,
+    DateTime fromDay,
+    Set<String> completedDays,
+  ) {
+    var streak = 0;
+    var cursor = DateTime(fromDay.year, fromDay.month, fromDay.day);
+    for (var checked = 0; checked < 730; checked++) {
+      if (!habit.schedule.isScheduledOn(cursor)) {
+        cursor = cursor.subtract(const Duration(days: 1));
+        continue;
+      }
+      if (!completedDays.contains(HabitClock.dayKey(cursor))) {
+        break;
+      }
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  /// In-memory restore eligibility check using pre-fetched data.
+  bool _canRestoreStreakBatched({
+    required Habit habit,
+    required DateTime now,
+    required AppSettings settings,
+    required Set<String> completedDays,
+    required Set<String> restoredDays,
+    required int monthlyCount,
+    required DateTime? Function(Habit) findLastScheduledDay,
+  }) {
+    final lastScheduledDay = findLastScheduledDay(habit);
+    if (lastScheduledDay == null) return false;
+    final lastDayKey = HabitClock.dayKey(lastScheduledDay);
+
+    // Check 24 hours grace period from the reset boundary of the missed day.
+    final resetBoundary = HabitClock.resetBoundaryAfterDay(lastDayKey, settings.resetMinutes);
+    if (now.isBefore(resetBoundary) || now.isAfter(resetBoundary.add(const Duration(hours: 24)))) {
+      return false;
+    }
+
+    // Check if that day was already completed.
+    if (completedDays.contains(lastDayKey)) {
+      return false;
+    }
+
+    // Check if that day has already been restored.
+    if (restoredDays.contains(lastDayKey)) {
+      return false;
+    }
+
+    // Monthly limit check.
+    if (monthlyCount >= 2) {
+      return false;
+    }
+
+    return true;
   }
 
   @override
@@ -310,20 +473,7 @@ class LocalHabitRepository implements HabitRepository {
       whereArgs: <Object?>[habit.id, HabitEntryStatus.completed.name],
     );
     final completedDays = rows.map((row) => row['day'] as String).toSet();
-    var streak = 0;
-    var cursor = DateTime(fromDay.year, fromDay.month, fromDay.day);
-    for (var checked = 0; checked < 730; checked++) {
-      if (!habit.schedule.isScheduledOn(cursor)) {
-        cursor = cursor.subtract(const Duration(days: 1));
-        continue;
-      }
-      if (!completedDays.contains(HabitClock.dayKey(cursor))) {
-        break;
-      }
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
-    }
-    return streak;
+    return _calculateStreakFromDays(habit, fromDay, completedDays);
   }
 
   @override
@@ -410,32 +560,6 @@ class LocalHabitRepository implements HabitRepository {
     onChanged?.call();
   }
 
-  Future<Habit?> _hydrateHabit(
-    DatabaseExecutor db,
-    Map<String, Object?> row,
-  ) async {
-    final scheduleRows = await db.query(
-      'habit_schedules',
-      where: 'habit_id = ?',
-      whereArgs: <Object?>[row['id']],
-      limit: 1,
-    );
-    if (scheduleRows.isEmpty) {
-      return null;
-    }
-    final targetRows = await db.query(
-      'habit_targets',
-      where: 'habit_id = ?',
-      whereArgs: <Object?>[row['id']],
-      limit: 1,
-    );
-    return Habit.fromRows(
-      habit: row,
-      schedule: scheduleRows.first,
-      target: targetRows.isEmpty ? null : targetRows.first,
-    );
-  }
-
   @override
   Future<bool> canRestoreStreak(String habitId, DateTime now, AppSettings settings) async {
     final db = await _database.instance;
@@ -443,18 +567,7 @@ class LocalHabitRepository implements HabitRepository {
     if (habit == null) return false;
     
     final day = HabitClock.habitDay(now, resetMinutes: settings.resetMinutes);
-    
-    // 1. Find the most recent scheduled day before today
-    DateTime cursor = day.subtract(const Duration(days: 1));
-    DateTime? lastScheduledDay;
-    for (int i = 0; i < 30; i++) {
-      if (habit.isScheduledOn(cursor)) {
-        lastScheduledDay = cursor;
-        break;
-      }
-      cursor = cursor.subtract(const Duration(days: 1));
-    }
-    
+    final lastScheduledDay = _findLastScheduledDay(habit, day);
     if (lastScheduledDay == null) return false;
     final lastDayKey = HabitClock.dayKey(lastScheduledDay);
     
@@ -503,16 +616,7 @@ class LocalHabitRepository implements HabitRepository {
     final habit = await getHabit(habitId);
     if (habit == null) return;
     
-    DateTime cursor = day.subtract(const Duration(days: 1));
-    DateTime? lastScheduledDay;
-    for (int i = 0; i < 30; i++) {
-      if (habit.isScheduledOn(cursor)) {
-        lastScheduledDay = cursor;
-        break;
-      }
-      cursor = cursor.subtract(const Duration(days: 1));
-    }
-    
+    final lastScheduledDay = _findLastScheduledDay(habit, day);
     if (lastScheduledDay == null) return;
     final lastDayKey = HabitClock.dayKey(lastScheduledDay);
     
@@ -551,4 +655,19 @@ class LocalHabitRepository implements HabitRepository {
     
     onChanged?.call();
   }
+
+  /// Find the most recent scheduled day before the given day.
+  static DateTime? _findLastScheduledDay(Habit habit, DateTime day) {
+    DateTime cursor = day.subtract(const Duration(days: 1));
+    for (int i = 0; i < 30; i++) {
+      if (habit.isScheduledOn(cursor)) {
+        return cursor;
+      }
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return null;
+  }
+
+  static String _placeholders(int count) =>
+      List<String>.filled(count, '?').join(', ');
 }

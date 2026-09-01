@@ -57,7 +57,7 @@ class QuickCompleteAction : ActionCallback {
         val habitId = parameters[HabitIdKey] ?: return
         val intent = HomeWidgetBackgroundIntent.getBroadcast(
             context,
-            Uri.parse("openhabit://complete?habitId=$habitId")
+            Uri.parse("habitpeak://complete?habitId=$habitId")
         )
         intent.send()
     }
@@ -78,7 +78,7 @@ private fun HabitWidgetContent(context: Context) {
     ) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
-                text = "OpenHabit",
+                text = "HabitPeak",
                 style = TextStyle(
                     color = ColorProvider(R.color.widget_text),
                     fontWeight = FontWeight.Bold

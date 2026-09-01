@@ -11,11 +11,25 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  Future<void>? _initializing;
 
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
+    final pending = _initializing;
+    if (pending != null) {
+      return pending;
+    }
+    _initializing = _initialize();
+    try {
+      await _initializing;
+    } finally {
+      _initializing = null;
+    }
+  }
+
+  Future<void> _initialize() async {
     tz_data.initializeTimeZones();
     try {
       final tzInfo = await FlutterTimezone.getLocalTimezone();
@@ -30,7 +44,7 @@ class NotificationService {
       }
     }
     const android = AndroidInitializationSettings(
-      '@drawable/ic_stat_openhabit',
+      '@drawable/ic_stat_habitpeak',
     );
     const darwin = DarwinInitializationSettings();
     const settings = InitializationSettings(android: android, iOS: darwin);
@@ -43,21 +57,6 @@ class NotificationService {
     _initialized = true;
   }
 
-  Future<void> showReminder(String habitName) async {
-    await _show(
-      id: habitName.hashCode,
-      title: 'Habit reminder',
-      body: 'Did you complete $habitName?',
-    );
-  }
-
-  Future<void> showMissedHabit(String habitName) async {
-    await _show(
-      id: habitName.hashCode ^ 0x42,
-      title: 'Missed habit',
-      body: 'You missed $habitName today.',
-    );
-  }
 
   Future<void> showEndOfDaySummary({
     required String label,
@@ -67,22 +66,6 @@ class NotificationService {
       id: label.hashCode ^ 0x84,
       title: 'Daily summary',
       body: 'You $label ${DurationFormat.compact(tracked)} today.',
-    );
-  }
-
-  Future<void> scheduleDailySummary({
-    required int id,
-    required DateTime at,
-  }) async {
-    await initialize();
-    await _plugin.zonedSchedule(
-      id: id,
-      title: 'Daily habit summary',
-      body: 'Review what you completed today.',
-      scheduledDate: tz.TZDateTime.from(at, tz.local),
-      notificationDetails: _details(),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
     );
   }
 
@@ -143,8 +126,8 @@ class NotificationService {
 
   NotificationDetails _details() {
     const android = AndroidNotificationDetails(
-      'openhabit_local',
-      'OpenHabit reminders',
+      'habitpeak_local',
+      'HabitPeak reminders',
       channelDescription: 'Habit reminders and daily summaries',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,

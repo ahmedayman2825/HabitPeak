@@ -35,13 +35,15 @@ class HabitWidgetService {
       };
     }).toList();
     final completed = items.where((item) => item.isComplete).length;
-    await HomeWidget.saveWidgetData<String>('habits_json', jsonEncode(payload));
-    await HomeWidget.saveWidgetData<int>('habit_count', items.length);
-    await HomeWidget.saveWidgetData<int>('completed_count', completed);
-    await HomeWidget.saveWidgetData<String>(
-      'reset_time',
-      settings.resetTimeLabel,
-    );
+    await Future.wait(<Future<void>>[
+      HomeWidget.saveWidgetData<String>('habits_json', jsonEncode(payload)),
+      HomeWidget.saveWidgetData<int>('habit_count', items.length),
+      HomeWidget.saveWidgetData<int>('completed_count', completed),
+      HomeWidget.saveWidgetData<String>(
+        'reset_time',
+        settings.resetTimeLabel,
+      ),
+    ]);
     await HomeWidget.updateWidget(androidName: androidWidgetName);
   }
 }

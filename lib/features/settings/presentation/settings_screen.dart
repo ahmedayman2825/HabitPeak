@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -205,19 +207,75 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _exportJson(BuildContext context, WidgetRef ref) async {
-    final file = await ref.read(backupServiceProvider).exportJson();
-    if (!context.mounted) {
-      return;
+    try {
+      final backupService = ref.read(backupServiceProvider);
+      final jsonString = await backupService.generateJsonBackup();
+      final defaultName = backupService.defaultFileName('habitpeak-backup', 'json');
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+
+      final path = await FilePicker.saveFile(
+        dialogTitle: 'Select export location',
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: const <String>['json'],
+        bytes: bytes,
+      );
+
+      if (path == null) {
+        return; // User cancelled
+      }
+
+      if (!path.startsWith('content://')) {
+        final targetFile = File(path);
+        if (!targetFile.existsSync() || (await targetFile.length()) == 0) {
+          await targetFile.writeAsBytes(bytes);
+        }
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'Backup exported successfully.');
+    } catch (e) {
+      if (!context.mounted) return;
+      _showMessage(context, 'Export failed: $e');
     }
-    _showMessage(context, 'Backup saved to ${file.path}');
   }
 
   Future<void> _exportCsv(BuildContext context, WidgetRef ref) async {
-    final file = await ref.read(backupServiceProvider).exportCsv();
-    if (!context.mounted) {
-      return;
+    try {
+      final backupService = ref.read(backupServiceProvider);
+      final csvString = await backupService.generateCsvExport();
+      final defaultName = backupService.defaultFileName('habitpeak-entries', 'csv');
+      final bytes = Uint8List.fromList(utf8.encode(csvString));
+
+      final path = await FilePicker.saveFile(
+        dialogTitle: 'Select export location',
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: const <String>['csv'],
+        bytes: bytes,
+      );
+
+      if (path == null) {
+        return; // User cancelled
+      }
+
+      if (!path.startsWith('content://')) {
+        final targetFile = File(path);
+        if (!targetFile.existsSync() || (await targetFile.length()) == 0) {
+          await targetFile.writeAsBytes(bytes);
+        }
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'CSV exported successfully.');
+    } catch (e) {
+      if (!context.mounted) return;
+      _showMessage(context, 'Export failed: $e');
     }
-    _showMessage(context, 'CSV saved to ${file.path}');
   }
 
   Future<void> _importBackup(BuildContext context, WidgetRef ref) async {

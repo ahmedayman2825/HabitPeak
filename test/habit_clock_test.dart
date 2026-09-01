@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:open_habit/core/utils/habit_clock.dart';
+import 'package:habit_peak/core/utils/habit_clock.dart';
 
 void main() {
   test('habit day respects custom reset time', () {

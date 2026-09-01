@@ -7,8 +7,8 @@ import '../features/settings/presentation/settings_screen.dart';
 import 'providers.dart';
 import 'theme/app_theme.dart';
 
-class OpenHabitApp extends ConsumerWidget {
-  const OpenHabitApp({super.key});
+class HabitPeakApp extends ConsumerWidget {
+  const HabitPeakApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -17,7 +17,7 @@ class OpenHabitApp extends ConsumerWidget {
       animation: settingsController,
       builder: (context, _) {
         return MaterialApp(
-          title: 'OpenHabit',
+          title: 'HabitPeak',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
@@ -38,19 +38,25 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+  final List<bool> _visited = <bool>[true, false, false];
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       const HomeScreen(),
-      const AnalyticsScreen(),
-      const SettingsScreen(),
+      _visited[1] ? const AnalyticsScreen() : const SizedBox.shrink(),
+      _visited[2] ? const SettingsScreen() : const SizedBox.shrink(),
     ];
     return Scaffold(
       body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (index) => setState(() => _index = index),
+        onDestinationSelected: (index) {
+          setState(() {
+            _index = index;
+            _visited[index] = true;
+          });
+        },
         destinations: const <NavigationDestination>[
           NavigationDestination(
             icon: Icon(Icons.today_outlined),

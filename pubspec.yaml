@@ -1,7 +1,7 @@
-name: open_habit
+name: habit_peak
 description: Offline-first, local-only habit tracking app built with Flutter and SQLite.
 publish_to: "none"
-version: 0.1.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.10.0 <4.0.0"

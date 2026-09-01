@@ -28,12 +28,7 @@ class HabitClock {
     return DateTime(parts[0], parts[1], parts[2]);
   }
 
-  static String displayDay(DateTime date) =>
-      DateFormat('EEE, MMM d').format(date);
 
-  static bool isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
 
   static DateTime startOfWeek(DateTime date) {
     final day = DateTime(date.year, date.month, date.day);

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:open_habit/features/habits/domain/recurrence_rule.dart';
+import 'package:habit_peak/features/habits/domain/recurrence_rule.dart';
 
 void main() {
   test('daily recurrence supports excluded weekdays', () {

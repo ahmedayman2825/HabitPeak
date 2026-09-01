@@ -10,6 +10,7 @@ class DataManagementService {
     await db.transaction((txn) async {
       await txn.delete('habit_entries');
       await txn.delete('timer_sessions');
+      await txn.delete('streak_restorations');
       if (!keepArchivedHabits) {
         await txn.update('habits', <String, Object?>{'archived_at': null});
       }
@@ -22,6 +23,7 @@ class DataManagementService {
       await txn.delete('habit_entries');
       await txn.delete('timer_sessions');
       await txn.delete('habit_revisions');
+      await txn.delete('streak_restorations');
       if (!keepArchivedHabits) {
         await txn.delete('habits', where: 'archived_at IS NOT NULL');
       }

@@ -1,6 +1,6 @@
 # Architecture
 
-OpenHabit uses a modular clean architecture:
+HabitPeak uses a modular clean architecture:
 
 - Presentation: Flutter screens and reusable widgets.
 - Domain: pure models, recurrence rules, timer calculations, and analytics scoring.

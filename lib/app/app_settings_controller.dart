@@ -15,6 +15,15 @@ class AppSettingsController extends ChangeNotifier {
 
   AppSettings get settings => _settings;
 
+  Future<void> load() async {
+    final settings = await _repository.load();
+    if (settings.toJson().toString() == _settings.toJson().toString()) {
+      return;
+    }
+    _settings = settings;
+    notifyListeners();
+  }
+
   Future<void> update(AppSettings settings) async {
     _settings = settings;
     notifyListeners();

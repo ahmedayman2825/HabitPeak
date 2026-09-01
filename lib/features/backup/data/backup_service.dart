@@ -24,11 +24,12 @@ class BackupService {
     'timer_sessions',
     'notification_rules',
     'settings',
+    'streak_restorations',
   ];
 
   final AppDatabase _database;
 
-  Future<File> exportJson() async {
+  Future<String> generateJsonBackup() async {
     final db = await _database.instance;
     final payload = <String, Object?>{
       'schemaVersion': schemaVersion,
@@ -40,13 +41,18 @@ class BackupService {
     for (final table in _tables) {
       tables[table] = await db.query(table);
     }
-    final file = await _backupFile('openhabit-backup', 'json');
-    return file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(payload),
-    );
+    return const JsonEncoder.withIndent('  ').convert(payload);
   }
 
-  Future<File> exportCsv() async {
+  Future<File> exportJson({String? targetPath}) async {
+    final content = await generateJsonBackup();
+    final file = targetPath != null
+        ? File(targetPath)
+        : await _backupFile('habitpeak-backup', 'json');
+    return file.writeAsString(content);
+  }
+
+  Future<String> generateCsvExport() async {
     final db = await _database.instance;
     final rows = await db.rawQuery('''
       SELECT h.name, h.type, e.day, e.status, e.number_value, e.timer_seconds, e.completed_at
@@ -66,7 +72,7 @@ class BackupService {
       ],
       ...rows.map(
         (row) => <Object?>[
-          row['name'],
+          _sanitizeCsv(row['name']),
           row['type'],
           row['day'],
           row['status'],
@@ -76,8 +82,30 @@ class BackupService {
         ],
       ),
     ];
-    final file = await _backupFile('openhabit-entries', 'csv');
-    return file.writeAsString(csv_lib.csv.encode(csvRows));
+    return csv_lib.csv.encode(csvRows);
+  }
+
+  Future<File> exportCsv({String? targetPath}) async {
+    final content = await generateCsvExport();
+    final file = targetPath != null
+        ? File(targetPath)
+        : await _backupFile('habitpeak-entries', 'csv');
+    return file.writeAsString(content);
+  }
+
+  String defaultFileName(String prefix, String extension) {
+    final stamp = DateFormat('yyyyMMdd-HHmmss').format(DateTime.now());
+    return '$prefix-$stamp.$extension';
+  }
+
+  /// Prefix values that could be interpreted as spreadsheet formulas.
+  static Object? _sanitizeCsv(Object? value) {
+    if (value is String &&
+        value.isNotEmpty &&
+        const <String>['=', '+', '-', '@', '\t', '\r'].contains(value[0])) {
+      return "'$value";
+    }
+    return value;
   }
 
   Future<void> importJson(File file) async {
@@ -110,7 +138,7 @@ class BackupService {
 
   Future<Directory> localBackupDirectory() async {
     final documents = await getApplicationDocumentsDirectory();
-    final directory = Directory(p.join(documents.path, 'openhabit_backups'));
+    final directory = Directory(p.join(documents.path, 'habitpeak_backups'));
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }

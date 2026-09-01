@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/app_settings_controller.dart';
 import '../../../app/providers.dart';
 import '../../../core/utils/duration_format.dart';
 import '../../../core/utils/habit_clock.dart';
 import '../../analytics/presentation/habit_analytics_screen.dart';
 import '../domain/habit.dart';
 import '../domain/habit_with_entry.dart';
+import '../../settings/domain/app_settings.dart';
 import 'habit_card.dart';
 import 'habit_form_screen.dart';
 
@@ -23,14 +25,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<HabitWithEntry> _items = const <HabitWithEntry>[];
   bool _loading = true;
   Timer? _timer;
+  bool _loadInFlight = false;
+  late final AppSettingsController _settingsController;
 
   @override
   void initState() {
     super.initState();
+    _settingsController = ref.read(appSettingsControllerProvider);
+    _settingsController.addListener(_handleSettingsChanged);
     _load();
+    // Timer only updates elapsed seconds display for running timers.
+    // It does NOT call _load() which was the primary cause of SQLite congestion.
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_items.any((item) => item.timerIsRunning && !item.timerIsPaused)) {
-        _load(showSpinner: false);
+      if (!mounted) return;
+      final hasRunning = _items.any((item) => item.timerIsRunning && !item.timerIsPaused);
+      if (hasRunning) {
+        // Only update the timer display, not the full database reload.
+        setState(() {
+          _items = _items.map((item) {
+            if (!item.timerIsRunning || item.timerIsPaused) return item;
+            return HabitWithEntry(
+              habit: item.habit,
+              entry: item.entry,
+              streak: item.streak,
+              activeTimerSeconds: item.activeTimerSeconds + 1,
+              savedTimerSeconds: item.savedTimerSeconds,
+              timerIsRunning: item.timerIsRunning,
+              timerIsPaused: item.timerIsPaused,
+              canRestore: item.canRestore,
+            );
+          }).toList();
+        });
       }
     });
   }
@@ -38,6 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _settingsController.removeListener(_handleSettingsChanged);
     super.dispose();
   }
 
@@ -92,34 +118,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _load({bool showSpinner = true}) async {
-    if (showSpinner && mounted) {
-      setState(() => _loading = true);
-    }
-    final settings = ref.read(appSettingsControllerProvider).settings;
-    await ref.read(timerEngineProvider).reconcileActiveSessions(settings);
-    final items = await ref
-        .read(habitRepositoryProvider)
-        .getTodayHabits(DateTime.now(), settings);
-    await ref
-        .read(habitWidgetServiceProvider)
-        .updateTodayWidget(items, settings);
-    final completed = items.where((item) => item.isComplete).length;
-    final missed = items.length - completed;
-    final todayKey = HabitClock.dayKey(DateTime.now(), resetMinutes: settings.resetMinutes);
-    final resetTime = HabitClock.resetBoundaryAfterDay(todayKey, settings.resetMinutes);
-    await ref.read(notificationServiceProvider).scheduleResetSummary(
-      completed: completed,
-      missed: missed,
-      resetTime: resetTime,
-    );
+    // Guard: skip if a load is already in-flight to prevent concurrent
+    // query storms (e.g. settings listener race at startup).
+    if (_loadInFlight) return;
+    _loadInFlight = true;
+    try {
+      if (showSpinner && mounted) {
+        setState(() => _loading = true);
+      }
+      final settings = ref.read(appSettingsControllerProvider).settings;
+      await ref.read(timerEngineProvider).reconcileActiveSessions(settings);
+      final items = await ref
+          .read(habitRepositoryProvider)
+          .getTodayHabits(DateTime.now(), settings);
 
-    if (!mounted) {
-      return;
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+      unawaited(_syncHomeIntegrations(items, settings));
+    } finally {
+      _loadInFlight = false;
     }
-    setState(() {
-      _items = items;
-      _loading = false;
-    });
+  }
+
+  void _handleSettingsChanged() {
+    unawaited(_load(showSpinner: false));
+  }
+
+  Future<void> _syncHomeIntegrations(
+    List<HabitWithEntry> items,
+    AppSettings settings,
+  ) async {
+    try {
+      await ref
+          .read(habitWidgetServiceProvider)
+          .updateTodayWidget(items, settings);
+      final completed = items.where((item) => item.isComplete).length;
+      final missed = items.length - completed;
+      final todayKey = HabitClock.dayKey(
+        DateTime.now(),
+        resetMinutes: settings.resetMinutes,
+      );
+      final resetTime = HabitClock.resetBoundaryAfterDay(
+        todayKey,
+        settings.resetMinutes,
+      );
+      await ref
+          .read(notificationServiceProvider)
+          .scheduleResetSummary(
+            completed: completed,
+            missed: missed,
+            resetTime: resetTime,
+          );
+    } catch (_) {
+      // Widget and notification sync should never delay or break the habit list.
+    }
   }
 
   Future<void> _createHabit() async {
@@ -183,8 +240,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(habitRepositoryProvider).toggleCheckbox(item.habit, day);
     await _load(showSpinner: false);
   }
-
-
 
   Future<void> _adjustNumber(HabitWithEntry item, int delta) async {
     await ref

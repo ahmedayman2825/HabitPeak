@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to OpenHabit.
+Thanks for considering a contribution to HabitPeak.
 
 ## Local Setup
 
